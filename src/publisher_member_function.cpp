@@ -64,7 +64,9 @@ private:
     RCLCPP_INFO(this->get_logger(), "I heard something'");
     auto x = msg->pose.pose.position.x;
     auto y = msg->pose.pose.position.y;
-    odom_reading_ = Pose2(x, y, 0.0);
+    auto theta = quaternionToYaw(msg->pose.orientation);
+
+    odom_reading_ = Pose2(x, y, theta);
     auto noise = noiseModel::Diagonal::Sigmas(Vector3(0.1,0.1,0.1));
     if(!is_graph_initialised_){
     	is_graph_initialised_ = true;
