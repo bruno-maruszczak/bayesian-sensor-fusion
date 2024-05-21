@@ -14,8 +14,31 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 
+###### GTSAM STUFF STARTS HERE
+
+# Include GTSAM CMake tools
+find_package(GTSAMCMakeTools)
+#include(GtsamBuildTypes) # Load build type flags and default to Debug mode
+#include(GtsamTesting)    # Easy functions for creating unit tests and scripts
+#include(GtsamMatlabWrap) # Automatic MATLAB wrapper generation
+
+# Ensure that local folder is searched before library folders
+#include_directories(BEFORE "${PROJECT_SOURCE_DIR}")
+
+###################################################################################
+# Find GTSAM components
+include_directories(/usr/include/eigen3)
+find_package(GTSAM REQUIRED) # Uses installed package
+include_directories(${GTSAM_INCLUDE_DIR})
+
+###################################################################################
+
+###### GTSAM STUFF ENDS HERE 
+
 add_executable(talker src/publisher_member_function.cpp)
 ament_target_dependencies(talker rclcpp std_msgs)
+
+target_link_libraries(talker gtsam)
 
 install(TARGETS
   talker

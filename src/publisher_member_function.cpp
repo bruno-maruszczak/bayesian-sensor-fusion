@@ -20,6 +20,14 @@
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
 
+// GTSAM
+#include <gtsam/geometry/Pose2.h>
+#include <gtsam/slam/BetweenFactor.h>
+#include <gtsam/slam/BetweenFactor.h>
+#include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
+#include <gtsam/nonlinear/Marginals.h>
+#include <gtsam/nonlinear/Values.h>
+
 using namespace std::chrono_literals;
 
 /* This example creates a subclass of Node and uses std::bind() to register a
