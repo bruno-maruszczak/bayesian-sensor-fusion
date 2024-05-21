@@ -19,6 +19,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
+#include "nav_msgs/msg/odometry.hpp"
 
 // GTSAM
 #include <gtsam/geometry/Pose2.h>
@@ -40,8 +41,8 @@ public:
   : Node("minimal_publisher"), count_(0)
   {
     publisher_ = this->create_publisher<std_msgs::msg::String>("topic", 10);
-    subscription_ = this->create_subscription<std_msgs::msg::String>(
-      "topic", 10, std::bind(&Minimal::topic_callback, this, _1));
+    subscription_ = this->create_subscription<nav_msgs::msg::Odometry>(
+      "odom", 10, std::bind(&Minimal::topic_callback, this, _1));
     timer_ = this->create_wall_timer(
       500ms, std::bind(&Minimal::timer_callback, this));
   }
@@ -54,11 +55,11 @@ private:
     RCLCPP_INFO(this->get_logger(), "Publishing: '%s'", message.data.c_str());
     publisher_->publish(message);
   }
-  void topic_callback(const std_msgs::msg::String::SharedPtr msg) const
+  void topic_callback(const nav_msgs::msg::Odometry::SharedPtr msg) const
   {
-    RCLCPP_INFO(this->get_logger(), "I heard: '%s'", msg->data.c_str());
+    RCLCPP_INFO(this->get_logger(), "I heard something'");
   }
-    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr subscription_;
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr subscription_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
   size_t count_;

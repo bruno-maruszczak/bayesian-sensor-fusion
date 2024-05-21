@@ -13,6 +13,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 
 ###### GTSAM STUFF STARTS HERE
 
@@ -36,7 +37,7 @@ include_directories(${GTSAM_INCLUDE_DIR})
 ###### GTSAM STUFF ENDS HERE 
 
 add_executable(talker src/publisher_member_function.cpp)
-ament_target_dependencies(talker rclcpp std_msgs)
+ament_target_dependencies(talker rclcpp std_msgs nav_msgs)
 
 target_link_libraries(talker gtsam)
 
