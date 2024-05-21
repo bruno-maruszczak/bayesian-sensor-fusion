@@ -14,30 +14,20 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(GTSAM REQUIRED)
 
-###### GTSAM STUFF STARTS HERE
+include_directories(
+  include
+  /usr/include/eigen3
+  ${tf2_INCLUDE_DIRS}
+  ${tf2_geometry_msgs_INCLUDE_DIRS}
+  ${GTSAM_INCLUDE_DIR}
+  )
 
-# Include GTSAM CMake tools
-find_package(GTSAMCMakeTools)
-#include(GtsamBuildTypes) # Load build type flags and default to Debug mode
-#include(GtsamTesting)    # Easy functions for creating unit tests and scripts
-#include(GtsamMatlabWrap) # Automatic MATLAB wrapper generation
-
-# Ensure that local folder is searched before library folders
-#include_directories(BEFORE "${PROJECT_SOURCE_DIR}")
-
-###################################################################################
-# Find GTSAM components
-include_directories(/usr/include/eigen3)
-find_package(GTSAM REQUIRED) # Uses installed package
-include_directories(${GTSAM_INCLUDE_DIR})
-
-###################################################################################
-
-###### GTSAM STUFF ENDS HERE 
-
-add_executable(talker src/publisher_member_function.cpp)
-ament_target_dependencies(talker rclcpp std_msgs nav_msgs)
+add_executable(talker src/pose_utils.cpp src/publisher_member_function.cpp)
+ament_target_dependencies(talker tf2 tf2_geometry_msgs rclcpp std_msgs nav_msgs)
 
 target_link_libraries(talker gtsam)
 

@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "pose_utils.hpp"
+
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -52,6 +54,7 @@ private:
   {
     auto message = std_msgs::msg::String();
     message.data = "Hello, world! " + std::to_string(count_++);
+
     RCLCPP_INFO(this->get_logger(), "Publishing: '%s'", message.data.c_str());
     publisher_->publish(message);
   }
