@@ -21,7 +21,10 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
+#include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 // GTSAM
 #include <gtsam/geometry/Pose2.h>
@@ -54,7 +57,7 @@ public:
     addPrior(Pose2(0.0, 0.0, 0.0), noiseModel::Diagonal::Sigmas(Vector3(0.1,0.1,0.1)));
 
     // Start publishing, subscribtion and timer
-    publisher_ = this->create_publisher<std_msgs::msg::String>("topic", 10);
+    publisher_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("estimated_pose", 10);
     subscription_ = this->create_subscription<nav_msgs::msg::Odometry>(
       "odom", 10, std::bind(&Minimal::topic_callback, this, _1));
     /*timer_ = this->create_wall_timer(
@@ -92,13 +95,33 @@ private:
     LevenbergMarquardtOptimizer optimizer(graph_, initial_guess_);
     
     // Estimate positions
-    Values positions = optimizer.optimize();
+    Values results = optimizer.optimize();
+    Marginals marginals(graph_, results);
     if (this->debug_)
       RCLCPP_INFO(this->get_logger(), "Graph: Finished optimisation");
-    positions.print("Positions: ");
-    auto message = std_msgs::msg::String();
-    message.data = "Optimised " + std::to_string(graph_n_);
-
+    results.print("Positions: ");
+    auto last_position = results.at<Pose2>(graph_n_);
+    auto last_covariance = marginals.marginalCovariance(graph_n_);
+    std::cout << "Pos cov: " << last_covariance << std::endl;
+    auto message = geometry_msgs::msg::PoseWithCovarianceStamped();
+    message.header = std_msgs::msg::Header();
+    message.header.frame_id = "odom";
+    message.header.stamp = this->now();
+    message.pose.pose.position.x = last_position.x();
+    message.pose.pose.position.y = last_position.y();
+    message.pose.pose.position.z = 0.0;
+    auto tf_q = tf2::Quaternion();
+    tf_q.setRPY(0.0, 0.0, last_position.theta());
+    auto q = tf2::toMsg(tf_q);
+    message.pose.pose.orientation = q;
+    message.pose.covariance = { 
+      last_covariance(0,0), last_covariance(0,1), 0.0, 0.0, 0.0, last_covariance(0,2),
+      last_covariance(1,0), last_covariance(1,1), 0.0, 0.0, 0.0, last_covariance(1,2),
+      0.0                 , 0.0                 , 0.0, 0.0, 0.0, 0.0,
+      0.0                 , 0.0                 , 0.0, 0.0, 0.0, 0.0,
+      0.0                 , 0.0                 , 0.0, 0.0, 0.0, 0.0,
+      last_covariance(2,0), last_covariance(2,1), 0.0, 0.0, 0.0, last_covariance(2,2)
+    };
     publisher_->publish(message);
   }
 
@@ -122,7 +145,7 @@ private:
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr subscription_;
   rclcpp::TimerBase::SharedPtr timer_;
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr publisher_;
   
   Pose2 odom_reading_;
   Pose2 last_odom_reading_;
