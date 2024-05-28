@@ -32,6 +32,8 @@ ament_target_dependencies(talker tf2 tf2_geometry_msgs rclcpp std_msgs nav_msgs)
 target_link_libraries(talker gtsam)
 
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME}/)
+install(DIRECTORY params DESTINATION share/${PROJECT_NAME}/)
+install(DIRECTORY maps DESTINATION share/${PROJECT_NAME}/)
 install(TARGETS
   talker
   DESTINATION lib/${PROJECT_NAME})

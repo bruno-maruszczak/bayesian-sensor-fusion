@@ -28,6 +28,12 @@ def generate_launch_description():
         get_package_share_directory('bayesian-sensor-fusion'),
         'launch',
         'config.rviz')
+    
+    
+    map_yaml_path = os.path.join(
+        get_package_share_directory('bayesian-sensor-fusion'),
+        'maps',
+        'map.yaml')
 
     return LaunchDescription([
         Node(
@@ -36,4 +42,24 @@ def generate_launch_description():
             name='rviz2',
             arguments=['-d', rviz_config_dir],
             output='screen'),
+    
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='map_to_odom_broadcaster',
+            arguments=['0', '0', '0', '0', '0', '0', '/map', '/odom'],
+            output='screen'),
+        
+        Node(
+            package='nav2_map_server',
+            executable='map_server',
+            name='map_server',
+            output='screen',
+            parameters=[{
+                'frame_id': 'map',
+                'topic_name': 'map',
+                'use_sim_ime': True,
+                'yaml_filename': map_yaml_path
+            }]
+        ),
     ])
