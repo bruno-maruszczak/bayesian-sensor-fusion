@@ -29,42 +29,43 @@ from launch.events import matches_action
 from lifecycle_msgs.msg import Transition
 
 def generate_launch_description():
-    rviz_config_dir = os.path.join(
+    map_yaml_path = os.path.join(
         get_package_share_directory('bayesian-sensor-fusion'),
-        'launch',
-        'config.rviz')
-
-    amcl_yaml_path = os.path.join(
-        get_package_share_directory('bayesian-sensor-fusion'),
-        'params',
-        'amcl_params.yaml')
-
-    rviz2_node = Node(
-            package='rviz2',
-            executable='rviz2',
-            name='rviz2',
-            arguments=['-d', rviz_config_dir],
-            output='screen')
-   
-    nav2_amcl_node = Node(
-            package='nav2_amcl',
-            executable='amcl',
-            name='amcl',
+        'maps',
+        'map.yaml')
+    
+    map_server_node = LifecycleNode(
+            package='nav2_map_server',
+            executable='map_server',
+            name='map_server',
             namespace='',
             output='screen',
-            parameters=[amcl_yaml_path])
-
-    nav2_lifecycle =Node(
-                package='nav2_lifecycle_manager',
-                executable='lifecycle_manager',
-                name='lifecycle_manager_amcl',
-                output='screen',
-                parameters=[{'node_names' : ["amcl"]},
-                            {'autostart': True},
-                            {'use_sim_time': True}])
-    ld = LaunchDescription()
-    ld.add_action(nav2_amcl_node)
-    ld.add_action(rviz2_node)
-    ld.add_action(nav2_lifecycle) 
+            parameters=[{
+                'frame_id': 'map',
+                'topic_name': 'map',
+                'use_sim_ime': True,
+                'yaml_filename': map_yaml_path
+            }]
+        )
     
+    nav2_lifecycle = Node(
+            package='nav2_lifecycle_manager',
+            executable='lifecycle_manager',
+            name='lifecycle_manager_map_server',
+            output='screen',
+            parameters=[{'node_names' : ['map_server']},
+                        {'autostart': True}])
+
+    map_odom_tf_node = Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='map_to_odom_broadcaster',
+            arguments=['0', '0', '0', '0', '0', '0', '/map', '/odom'],
+            output='screen')
+    
+    ld = LaunchDescription()
+    ld.add_action(map_server_node)
+    ld.add_action(nav2_lifecycle)
+    ld.add_action(map_odom_tf_node)
+
     return ld

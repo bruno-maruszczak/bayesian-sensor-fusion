@@ -1,0 +1,26 @@
+amcl:
+  ros__parameters:
+    use_sim_time: false
+    min_particles: 500
+    max_particles: 2000
+    kld_err: 0.01
+    kld_z: 0.99
+    do_beamskip: true
+    beam_skip_distance: 0.5
+    beam_skip_threshold: 0.3
+    beam_skip_error_threshold: 0.9
+    laser_model_type: "likelihood_field"
+    update_min_d: 0.2
+    update_min_a: 0.2
+    resample_interval: 1
+    transform_tolerance: 0.1
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
+    tf_broadcast: false
+    scan_topic: "scan"
+    odom_topic: "odom"
+    always_reset_initial_pose: false
+    initial_pose.x: 0.0
+    initial_pose.y: 0.0
+    initial_pose.z: 0.0
+    set_initial_pose: true
