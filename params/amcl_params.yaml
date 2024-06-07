@@ -20,7 +20,7 @@ amcl:
     scan_topic: "scan"
     odom_topic: "odom"
     always_reset_initial_pose: false
-    initial_pose.x: 0.0
-    initial_pose.y: 0.0
+    initial_pose.x: -2.0
+    initial_pose.y: -0.5
     initial_pose.z: 0.0
     set_initial_pose: true

@@ -54,6 +54,12 @@ def generate_launch_description():
             output='screen',
             parameters=[amcl_yaml_path])
 
+    gtsam_node = Node(
+            package='bayesian-sensor-fusion',
+            executable='talker',
+            name='talker',
+            output='screen')
+    
     nav2_lifecycle =Node(
                 package='nav2_lifecycle_manager',
                 executable='lifecycle_manager',
@@ -66,5 +72,6 @@ def generate_launch_description():
     ld.add_action(nav2_amcl_node)
     ld.add_action(rviz2_node)
     ld.add_action(nav2_lifecycle) 
+    ld.add_action(gtsam_node) 
     
     return ld
