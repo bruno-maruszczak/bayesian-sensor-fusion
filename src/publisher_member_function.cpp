@@ -37,8 +37,6 @@ using std::placeholders::_1;
 using namespace std::chrono_literals;
 using namespace gtsam;
 
-/* This example creates a subclass of Node and uses std::bind() to register a
- * member function as a callback from the timer. */
 gtsam::Pose2 operator-(const gtsam::Pose2& pose1, const gtsam::Pose2& pose2) {
     // Subtract the translation and rotation components separately
     double dx = pose1.x() - pose2.x();
@@ -48,6 +46,8 @@ gtsam::Pose2 operator-(const gtsam::Pose2& pose1, const gtsam::Pose2& pose2) {
     return gtsam::Pose2(dx, dy, dtheta);
 }
 
+/* This example creates a subclass of Node and uses std::bind() to register a
+ * member function as a callback from the timer. */
 class Minimal : public rclcpp::Node
 {
 public:
@@ -59,8 +59,12 @@ public:
 
     // Start publishing, subscribtion and timer
     publisher_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("estimated_pose", 10);
+    
     odom_subscriber_ = this->create_subscription<nav_msgs::msg::Odometry>(
       "odom", 10, std::bind(&Minimal::odom_callback, this, _1));
+    
+    amcl_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+      "amcl_pose", 10, std::bind(&Minimal::amcl_callback, this, _1));
   }
 
 private:
@@ -88,24 +92,16 @@ private:
   // PoseWithCovarianceStamped
   void publish_esimated_pose()
   {
-    if (this->debug_)
-      RCLCPP_INFO(this->get_logger(), "Graph: Starting optimizer");
-
     // Optimise graph
     LevenbergMarquardtOptimizer optimizer(graph_, initial_guess_);
     
     // Estimate positions
     Values results = optimizer.optimize();
     Marginals marginals(graph_, results);
-    if (this->debug_)
-      RCLCPP_INFO(this->get_logger(), "Graph: Finished optimisation");
-    results.print("Positions: ");
     
     auto last_position = results.at<Pose2>(graph_n_);
     auto last_covariance = marginals.marginalCovariance(graph_n_);
 
-    std::cout << "Pos cov: " << last_covariance << std::endl;
-    
     // Convert Pose to msg format
     auto tf_q = tf2::Quaternion();
     tf_q.setRPY(0.0, 0.0, last_position.theta());
@@ -137,18 +133,9 @@ private:
     
     publisher_->publish(message);
   }
-
-  void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
-  {
-    if (this->debug_)
-    {
-      std::string debug_msg = "Received odometry. " + std::to_string(graph_n_ + 1);
-      RCLCPP_INFO(this->get_logger(), debug_msg.c_str());
-    }
-
-    odom_reading_ = getPoseFromOdom(msg); 
-    
-    // Add reading to graph
+  
+  // Updates Graph based on current readingsi, publishes current esitmated pose
+  void update_graph() {    
     initial_guess_.insert(graph_n_+1, Pose2(-2.0, -0.5, 0.0));
     auto noise = noiseModel::Diagonal::Sigmas(Vector3(0.1,0.1,0.1));
 
@@ -158,11 +145,39 @@ private:
     // Publish estimated pose
     this->publish_esimated_pose();
     
-    // Update previous mesaurements
+    // Update last odometry, for calculating change of position 
     last_odom_reading_ = odom_reading_;
+  }
+ 
+  // Odom Reading
+  void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
+  {
+    if (this->debug_)
+    {
+      std::string debug_msg = "Received odometry. " + std::to_string(graph_n_ + 1);
+      RCLCPP_INFO(this->get_logger(), debug_msg.c_str());
+    }
+    
+    odom_reading_ = getPoseFromOdom(msg);   
+    this->update_graph();
+  }
+  
+  // AMCL reading
+    
+  
+  void amcl_callback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg)
+  {
+    if (this->debug_)
+    {
+      std::string debug_msg = "Received amcl pose.";
+      RCLCPP_INFO(this->get_logger(), debug_msg.c_str());
+    }
+    
+    // TODO: use amcl reading
   }
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subscriber_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr amcl_subscriber_;
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr publisher_;
   
   size_t graph_n_; // Graph node count
