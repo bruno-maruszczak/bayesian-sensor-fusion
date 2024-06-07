@@ -20,8 +20,12 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import EmitEvent
 from launch_ros.actions import Node
-
+from launch_ros.actions import LifecycleNode
+from launch_ros.events.lifecycle import ChangeState
+from launch.events import matches_action
+from lifecycle_msgs.msg import Transition
 
 def generate_launch_description():
     rviz_config_dir = os.path.join(
@@ -35,6 +39,19 @@ def generate_launch_description():
         'maps',
         'map.yaml')
 
+    map_server_node = LifecycleNode(
+            package='nav2_map_server',
+            executable='map_server',
+            name='map_server',
+            namespace='',
+            output='screen',
+            parameters=[{
+                'frame_id': 'map',
+                'topic_name': 'map',
+                'use_sim_ime': True,
+                'yaml_filename': map_yaml_path
+            }]
+        )
     return LaunchDescription([
         Node(
             package='rviz2',
@@ -50,16 +67,19 @@ def generate_launch_description():
             arguments=['0', '0', '0', '0', '0', '0', '/map', '/odom'],
             output='screen'),
         
-        Node(
-            package='nav2_map_server',
-            executable='map_server',
-            name='map_server',
-            output='screen',
-            parameters=[{
-                'frame_id': 'map',
-                'topic_name': 'map',
-                'use_sim_ime': True,
-                'yaml_filename': map_yaml_path
-            }]
+        map_server_node,
+
+        EmitEvent(
+            event=ChangeState(
+                lifecycle_node_matcher=matches_action(map_server_node),
+                transition_id=Transition.TRANSITION_CONFIGURE
+            )
+        ),
+
+        EmitEvent(
+            event=ChangeState(
+                lifecycle_node_matcher=matches_action(map_server_node),
+                transition_id=Transition.TRANSITION_ACTIVATE
+            )
         ),
     ])
