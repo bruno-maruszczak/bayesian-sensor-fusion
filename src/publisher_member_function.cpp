@@ -31,6 +31,7 @@
 #include <gtsam/geometry/Pose2.h>
 #include <gtsam/slam/BetweenFactor.h>
 #include <gtsam/slam/BetweenFactor.h>
+#include <gtsam/slam/PriorFactor.h>
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
 #include <gtsam/nonlinear/Marginals.h>
 #include <gtsam/nonlinear/Values.h>
@@ -57,12 +58,12 @@ class Minimal : public rclcpp::Node
 {
 public:
   Minimal()
-  : Node("minimal_publisher"), graph_n_(0), debug_(true), last_odom_reading_(Pose2(0.0, 0.0, 0.0))
+  : Node("minimal_publisher"), graph_n_(0), debug_(false), last_odom_reading_(Pose2(0.0, 0.0, 0.0)), skip_amcl(true)
   {
     // Add prior knowledge
     addPrior(Pose2(0.0, 0.0, 0.0), noiseModel::Diagonal::Sigmas(Vector3(0.1,0.1,0.1)));
 
-    // Start publishing, subscribtion and timer
+    // Start publishing, subscribtion and time
     publisher_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("estimated_pose", 10);
     
     odom_subscriber_ = this->create_subscription<nav_msgs::msg::Odometry>(
@@ -88,7 +89,7 @@ private:
     // Get pose from msg
     auto x = amcl_msg->pose.pose.position.x;
     auto y = amcl_msg->pose.pose.position.y;
-    auto theta = amcl_msg->pose.pose.position.z;
+    auto theta = quaternionToYaw(amcl_msg->pose.pose.orientation);
 
     Pose2 pose(x, y, theta);
     
@@ -100,6 +101,12 @@ private:
                  covariance_matrix(1, 0), covariance_matrix(1, 1), covariance_matrix(1, 5),
                  covariance_matrix(5, 0), covariance_matrix(5, 1), covariance_matrix(5, 5);
     
+    // Specify the desired format for printing
+    Eigen::IOFormat fmt(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", "\n", "[", "]");
+    std::cout << "AMCL Pose: " << x << ", " << y << ", " << theta << std::endl;
+    // Print the matrix using the specified format
+    std::cout << "Covariance Matrix:\n" << covariance.format(fmt) << std::endl << std::endl;
+
     // Create noise model from cov matrixj
     noiseModel::Gaussian::shared_ptr noise_model = noiseModel::Gaussian::Covariance(covariance);
     return std::make_tuple(pose, noise_model);
@@ -109,12 +116,13 @@ private:
 
   void addPrior(Pose2 mean, noiseModel::Diagonal::shared_ptr noise)
   { 
-    graph_.addPrior(1,  mean, noise);
-    initial_guess_.insert(1, Pose2(0.0, 0.0, 0.0));
+    graph_.add(PriorFactor<Pose2>(1,  mean, noise));
+    initial_guess_.insert(1, Pose2(-2.0, -0.5, 0.0));
+    RCLCPP_INFO(this->get_logger(), "Added PriorFactor: 1");
     graph_n_++;
 
     if (debug_)
-      RCLCPP_INFO(this->get_logger(), "Graph: Set prior to ");
+      RCLCPP_INFO(this->get_logger(), "Graph: Set prior to intial position");
   }
 
   // Given current graph, calculates and publishes estimated Pose
@@ -128,6 +136,9 @@ private:
     Values results = optimizer.optimize();
     Marginals marginals(graph_, results);
     
+
+    std::string log_message = "Reading factor at: " + std::to_string(graph_n_);
+    RCLCPP_INFO(this->get_logger(), log_message.c_str()); 
     auto last_position = results.at<Pose2>(graph_n_);
     auto last_covariance = marginals.marginalCovariance(graph_n_);
 
@@ -145,7 +156,8 @@ private:
       0.0                 , 0.0                 , 0.0, 0.0, 0.0, 0.0,
       last_covariance(2,0), last_covariance(2,1), 0.0, 0.0, 0.0, last_covariance(2,2)
     };
-
+    
+    
     // Prepare message
     auto message = geometry_msgs::msg::PoseWithCovarianceStamped();
     message.header = std_msgs::msg::Header();
@@ -160,6 +172,12 @@ private:
 
     message.pose.covariance = covariance;
     
+    // Print output    
+
+    Eigen::IOFormat fmt(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", "\n", "[", "]");
+    std::cout << "Estimated Pose: " << last_position.x() << ", " << last_position.y() << ", " << last_position.theta() << std::endl;
+    // Print the matrix using the specified format
+    std::cout << "Covariance Matrix:\n" << last_covariance.format(fmt) << std::endl;
     publisher_->publish(message);
   }
   
@@ -168,9 +186,15 @@ private:
     initial_guess_.insert(graph_n_+1, Pose2(-2.0, -0.5, 0.0));
     auto noise = noiseModel::Diagonal::Sigmas(Vector3(0.1,0.1,0.1));
 
+    graph_.add(PriorFactor<Pose2>(graph_n_, amcl_pose_, amcl_noise_));
    	graph_.emplace_shared<BetweenFactor<Pose2> >(graph_n_, graph_n_ + 1, odom_reading_ - last_odom_reading_, noise);
+   
+
+    std::string message = "Added prior factor at" + std::to_string(graph_n_);
+    //RCLCPP_INFO(this->get_logger(), message.c_str()); 
+    message = "Added between factor at" + std::to_string(graph_n_) + " " + std::to_string(graph_n_+1);
+    //RCLCPP_INFO(this->get_logger(), message.c_str()); 
     graph_n_++;
-    
     // Publish estimated pose
     this->publish_esimated_pose();
     
@@ -188,7 +212,6 @@ private:
     }
     
     odom_reading_ = getPoseFromOdom(msg);   
-    this->update_graph();
   }
   
   // AMCL reading
@@ -202,6 +225,12 @@ private:
       RCLCPP_INFO(this->get_logger(), debug_msg.c_str());
     }
     
+    if (this->skip_amcl == true)
+    {
+      skip_amcl = false;
+      return
+    }    
+
     PoseNoiseTuple result = getPoseFromAMCL(msg);
     amcl_pose_ = std::get<0>(result);
     amcl_noise_ = std::get<1>(result);
@@ -209,11 +238,12 @@ private:
     if (this->debug_)
     {
       std::ostringstream stream;
-      stream << "Noise model covariance matrix:\n" << amcl_noise_->R().format(Eigen::IOFormat(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", "\n", "[", "]"));
-      RCLCPP_INFO(this->get_logger(), stream.str().c_str());
+      stream << "AMCL covariance matrix:\n" << amcl_noise_->R().format(Eigen::IOFormat(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", "\n", "[", "]"));
       RCLCPP_INFO(this->get_logger(), "Pose2: (x: %f, y: %f, theta: %f)", amcl_pose_.x(), amcl_pose_.y(), amcl_pose_.theta());
+      RCLCPP_INFO(this->get_logger(), stream.str().c_str());
+      std::cout << std::endl;
     }
-
+    this->update_graph();
   }
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subscriber_;
@@ -230,6 +260,8 @@ private:
 
   Values initial_guess_;
   NonlinearFactorGraph graph_;
+  
+  bool skip_amcl;
 };
 
 
