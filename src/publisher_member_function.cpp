@@ -18,6 +18,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <tuple>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
@@ -33,9 +34,13 @@
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
 #include <gtsam/nonlinear/Marginals.h>
 #include <gtsam/nonlinear/Values.h>
+#include <Eigen/Dense>
+
 using std::placeholders::_1;
 using namespace std::chrono_literals;
 using namespace gtsam;
+
+using PoseNoiseTuple = std::tuple<gtsam::Pose2, std::shared_ptr<gtsam::noiseModel::Gaussian>>;
 
 gtsam::Pose2 operator-(const gtsam::Pose2& pose1, const gtsam::Pose2& pose2) {
     // Subtract the translation and rotation components separately
@@ -78,6 +83,30 @@ private:
     return Pose2(x, y, theta);
   }
   
+  PoseNoiseTuple getPoseFromAMCL(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr amcl_msg)
+  {
+    // Get pose from msg
+    auto x = amcl_msg->pose.pose.position.x;
+    auto y = amcl_msg->pose.pose.position.y;
+    auto theta = amcl_msg->pose.pose.position.z;
+
+    Pose2 pose(x, y, theta);
+    
+    // Convert 6x6 (x, y, z, rx, ry, rz) covariance matrix to 3x3 (x, y, rz)
+    auto covariance_array = amcl_msg->pose.covariance;
+    Eigen::Map<const Eigen::Matrix<double, 6, 6, Eigen::RowMajor>> covariance_matrix(covariance_array.data());
+    Eigen::MatrixXd covariance(3, 3);
+    covariance << covariance_matrix(0, 0), covariance_matrix(0, 1), covariance_matrix(0, 5),
+                 covariance_matrix(1, 0), covariance_matrix(1, 1), covariance_matrix(1, 5),
+                 covariance_matrix(5, 0), covariance_matrix(5, 1), covariance_matrix(5, 5);
+    
+    // Create noise model from cov matrixj
+    noiseModel::Gaussian::shared_ptr noise_model = noiseModel::Gaussian::Covariance(covariance);
+    return std::make_tuple(pose, noise_model);
+
+  }
+    
+
   void addPrior(Pose2 mean, noiseModel::Diagonal::shared_ptr noise)
   { 
     graph_.addPrior(1,  mean, noise);
@@ -173,7 +202,18 @@ private:
       RCLCPP_INFO(this->get_logger(), debug_msg.c_str());
     }
     
-    // TODO: use amcl reading
+    PoseNoiseTuple result = getPoseFromAMCL(msg);
+    amcl_pose_ = std::get<0>(result);
+    amcl_noise_ = std::get<1>(result);
+    
+    if (this->debug_)
+    {
+      std::ostringstream stream;
+      stream << "Noise model covariance matrix:\n" << amcl_noise_->R().format(Eigen::IOFormat(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", "\n", "[", "]"));
+      RCLCPP_INFO(this->get_logger(), stream.str().c_str());
+      RCLCPP_INFO(this->get_logger(), "Pose2: (x: %f, y: %f, theta: %f)", amcl_pose_.x(), amcl_pose_.y(), amcl_pose_.theta());
+    }
+
   }
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subscriber_;
@@ -184,6 +224,10 @@ private:
   bool debug_;
   Pose2 odom_reading_;
   Pose2 last_odom_reading_;
+  
+  Pose2 amcl_pose_;
+  noiseModel::Gaussian::shared_ptr amcl_noise_;
+
   Values initial_guess_;
   NonlinearFactorGraph graph_;
 };
