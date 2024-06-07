@@ -117,7 +117,7 @@ private:
   void addPrior(Pose2 mean, noiseModel::Diagonal::shared_ptr noise)
   { 
     graph_.add(PriorFactor<Pose2>(1,  mean, noise));
-    initial_guess_.insert(1, Pose2(-2.0, -0.5, 0.0));
+    initial_guess_.insert(1, Pose2(0.0, 0.0, 0.0));
     RCLCPP_INFO(this->get_logger(), "Added PriorFactor: 1");
     graph_n_++;
 
@@ -228,7 +228,7 @@ private:
     if (this->skip_amcl == true)
     {
       skip_amcl = false;
-      return
+      return;
     }    
 
     PoseNoiseTuple result = getPoseFromAMCL(msg);
