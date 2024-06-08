@@ -54,8 +54,10 @@ Minimal::Minimal()
   // Start publishing, subscribtion and time
   publisher_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("estimated_pose", 10);
   
+<<<<<<< HEAD
   odom_subscriber_ = this->create_subscription<nav_msgs::msg::Odometry>(
     "odom", 10, std::bind(&Minimal::odom_callback, this, _1));
+>>>>>>> 584cbce8535c06fe7d2be686078e3ec6a7a86286
   
   amcl_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
     "amcl_pose", 10, std::bind(&Minimal::amcl_callback, this, _1));
