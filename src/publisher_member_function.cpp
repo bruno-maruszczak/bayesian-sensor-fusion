@@ -30,7 +30,6 @@
 // GTSAM
 #include <gtsam/geometry/Pose2.h>
 #include <gtsam/slam/BetweenFactor.h>
-#include <gtsam/slam/BetweenFactor.h>
 #include <gtsam/slam/PriorFactor.h>
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
 #include <gtsam/nonlinear/Marginals.h>
@@ -58,10 +57,10 @@ class Minimal : public rclcpp::Node
 {
 public:
   Minimal()
-  : Node("minimal_publisher"), graph_n_(0), debug_(false), last_odom_reading_(Pose2(0.0, 0.0, 0.0)), skip_amcl(true)
+  : Node("minimal_publisher"), graph_n_(0), debug_(false), last_odom_reading_(Pose2(0.0, 0.0, 0.0)), odom_initialized_(false), skip_amcl(true)
   {
     // Add prior knowledge
-    addPrior(Pose2(0.0, 0.0, 0.0), noiseModel::Diagonal::Sigmas(Vector3(0.1,0.1,0.1)));
+    addPrior(Pose2(-2.0, -0.5, 0.0), noiseModel::Diagonal::Sigmas(Vector3(0.1,0.1,0.1)));
 
     // Start publishing, subscribtion and time
     publisher_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("estimated_pose", 10);
@@ -117,7 +116,7 @@ private:
   void addPrior(Pose2 mean, noiseModel::Diagonal::shared_ptr noise)
   { 
     graph_.add(PriorFactor<Pose2>(1,  mean, noise));
-    initial_guess_.insert(1, Pose2(0.0, 0.0, 0.0));
+    initial_guess_.insert(1, Pose2(-2.0, -0.5, 0.0));
     RCLCPP_INFO(this->get_logger(), "Added PriorFactor: 1");
     graph_n_++;
 
@@ -210,7 +209,10 @@ private:
       std::string debug_msg = "Received odometry. " + std::to_string(graph_n_ + 1);
       RCLCPP_INFO(this->get_logger(), debug_msg.c_str());
     }
-    
+    if(!odom_initialized_){
+      last_odom_reading_ = getPoseFromOdom(msg);
+      odom_initialized_ = true;
+    }
     odom_reading_ = getPoseFromOdom(msg);   
   }
   
@@ -254,7 +256,7 @@ private:
   bool debug_;
   Pose2 odom_reading_;
   Pose2 last_odom_reading_;
-  
+  bool odom_initialized_; 
   Pose2 amcl_pose_;
   noiseModel::Gaussian::shared_ptr amcl_noise_;
 
