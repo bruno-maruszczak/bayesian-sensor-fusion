@@ -29,6 +29,10 @@
 
 // GTSAM
 #include <gtsam/geometry/Pose2.h>
+#include <gtsam/geometry/Pose3.h>
+#include <gtsam/geometry/Point3.h>
+#include <gtsam/geometry/Rot3.h>
+#include <gtsam/geometry/Quaternion.h>
 #include <gtsam/slam/BetweenFactor.h>
 #include <gtsam/slam/PriorFactor.h>
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
@@ -40,7 +44,7 @@ using std::placeholders::_1;
 using namespace std::chrono_literals;
 using namespace gtsam;
 
-using PoseNoiseTuple = std::tuple<gtsam::Pose2, gtsam::noiseModel::Gaussian::shared_ptr>; 
+using PoseNoiseTuple = std::tuple<gtsam::Pose3, gtsam::noiseModel::Gaussian::shared_ptr>; 
 
 gtsam::Pose2 operator-(const gtsam::Pose2& pose1, const gtsam::Pose2& pose2) {
     // Subtract the translation and rotation components separately
@@ -51,16 +55,25 @@ gtsam::Pose2 operator-(const gtsam::Pose2& pose1, const gtsam::Pose2& pose2) {
     return gtsam::Pose2(dx, dy, dtheta);
 }
 
+gtsam::Pose3 operator-(const gtsam::Pose3& pose1, const gtsam::Pose3& pose2) {
+    // Subtract the translation and rotation components separately
+    double dx = pose1.translation().x() - pose2.translation().x();
+    double dy = pose1.translation().y() - pose2.translation().y();
+    //double dz = pose1.translation().z() - pose2.translation().z();
+    auto dq = Rot3(traits<Quaternion>::Between(pose1.rotation().toQuaternion(), pose2.rotation().toQuaternion()));
+    // Return the difference as a new Pose2 object
+    return gtsam::Pose3::Create(dq, Point3(dx, dy, 0.0));
+}
 /* This example creates a subclass of Node and uses std::bind() to register a
  * member function as a callback from the timer. */
 class Minimal : public rclcpp::Node
 {
 public:
   Minimal()
-  : Node("minimal_publisher"), graph_n_(0), debug_(false), last_odom_reading_(Pose2(0.0, 0.0, 0.0)), odom_initialized_(false), skip_amcl(true)
+  : Node("minimal_publisher"), graph_n_(0), debug_(true), last_odom_reading_(Pose3(Pose2(0.0, 0.0, 0.0))), odom_initialized_(false), skip_amcl(true)
   {
     // Add prior knowledge
-    addPrior(Pose2(-2.0, -0.5, 0.0), noiseModel::Diagonal::Sigmas(Vector3(0.1,0.1,0.1)));
+    addPrior(Pose3(Pose2(-2.0, -0.5, 0.0)), noiseModel::Isotropic::Sigma(6, 1e-2));
 
     // Start publishing, subscribtion and time
     publisher_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("estimated_pose", 10);
@@ -74,13 +87,13 @@ public:
 
 private:
   // Given odometry message returns robot position as Pos2(x, y, theta)
-  Pose2 getPoseFromOdom(const nav_msgs::msg::Odometry::SharedPtr msg)
+  Pose3 getPoseFromOdom(const nav_msgs::msg::Odometry::SharedPtr msg)
   {
     auto x = msg->pose.pose.position.x;
     auto y = msg->pose.pose.position.y;
     auto theta = quaternionToYaw(msg->pose.pose.orientation);
 
-    return Pose2(x, y, theta);
+    return Pose3(Pose2(x, y, theta));
   }
   
   PoseNoiseTuple getPoseFromAMCL(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr amcl_msg)
@@ -94,29 +107,32 @@ private:
     
     // Convert 6x6 (x, y, z, rx, ry, rz) covariance matrix to 3x3 (x, y, rz)
     auto covariance_array = amcl_msg->pose.covariance;
-    Eigen::Map<const Eigen::Matrix<double, 6, 6, Eigen::RowMajor>> covariance_matrix(covariance_array.data());
+    Eigen::Map<Eigen::Matrix<double, 6, 6, Eigen::RowMajor>> covariance_matrix(covariance_array.data());
+#include <gtsam/geometry/Pose3.h>
     Eigen::MatrixXd covariance(3, 3);
     covariance << covariance_matrix(0, 0), covariance_matrix(0, 1), covariance_matrix(0, 5),
                  covariance_matrix(1, 0), covariance_matrix(1, 1), covariance_matrix(1, 5),
                  covariance_matrix(5, 0), covariance_matrix(5, 1), covariance_matrix(5, 5);
-    
+    covariance_matrix(2,2) = 1.0; 
+    covariance_matrix(3,3) = 1.0; 
+    covariance_matrix(4,4) = 1.0; 
     // Specify the desired format for printing
     Eigen::IOFormat fmt(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", "\n", "[", "]");
     std::cout << "AMCL Pose: " << x << ", " << y << ", " << theta << std::endl;
     // Print the matrix using the specified format
-    std::cout << "Covariance Matrix:\n" << covariance.format(fmt) << std::endl << std::endl;
+    std::cout << "AMCL Covariance Matrix:\n" << covariance_matrix.format(fmt) << std::endl << std::endl;
 
     // Create noise model from cov matrixj
-    noiseModel::Gaussian::shared_ptr noise_model = noiseModel::Gaussian::Covariance(covariance);
-    return std::make_tuple(pose, noise_model);
+    noiseModel::Gaussian::shared_ptr noise_model = noiseModel::Gaussian::Covariance(covariance_matrix);
+    return std::make_tuple(Pose3(pose), noise_model);
 
   }
     
 
-  void addPrior(Pose2 mean, noiseModel::Diagonal::shared_ptr noise)
+  void addPrior(Pose3 mean, noiseModel::Diagonal::shared_ptr noise)
   { 
-    graph_.add(PriorFactor<Pose2>(1,  mean, noise));
-    initial_guess_.insert(1, Pose2(-2.0, -0.5, 0.0));
+    graph_.add(PriorFactor<Pose3>(1,  mean, noise));
+    initial_guess_.insert(1, Pose3(Pose2(-2.0, -0.5, 0.0)));
     RCLCPP_INFO(this->get_logger(), "Added PriorFactor: 1");
     graph_n_++;
 
@@ -138,15 +154,16 @@ private:
 
     std::string log_message = "Reading factor at: " + std::to_string(graph_n_);
     RCLCPP_INFO(this->get_logger(), log_message.c_str()); 
-    auto last_position = results.at<Pose2>(graph_n_);
+    auto last_pose = results.at<Pose3>(graph_n_);
     auto last_covariance = marginals.marginalCovariance(graph_n_);
-
+    auto last_position = last_pose.translation();
+    auto last_r = last_pose.rotation().toQuaternion();
     // Convert Pose to msg format
-    auto tf_q = tf2::Quaternion();
-    tf_q.setRPY(0.0, 0.0, last_position.theta());
+    auto tf_q = tf2::Quaternion(last_r.x(), last_r.y(), last_r.z(), last_r.w());
+    //tf_q.setRPY(0.0, 0.0, last_position.theta());
 
     auto q = tf2::toMsg(tf_q);
-    
+    /*
     std::array<double, 36> covariance = { 
       last_covariance(0,0), last_covariance(0,1), 0.0, 0.0, 0.0, last_covariance(0,2),
       last_covariance(1,0), last_covariance(1,1), 0.0, 0.0, 0.0, last_covariance(1,2),
@@ -155,8 +172,10 @@ private:
       0.0                 , 0.0                 , 0.0, 0.0, 0.0, 0.0,
       last_covariance(2,0), last_covariance(2,1), 0.0, 0.0, 0.0, last_covariance(2,2)
     };
+    */
     
-    
+    std::array<double, 36> covariance;
+    Eigen::Map<Eigen::Matrix<double, 6, 6, Eigen::RowMajor>>(covariance.data()) = last_covariance;
     // Prepare message
     auto message = geometry_msgs::msg::PoseWithCovarianceStamped();
     message.header = std_msgs::msg::Header();
@@ -174,25 +193,25 @@ private:
     // Print output    
 
     Eigen::IOFormat fmt(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", "\n", "[", "]");
-    std::cout << "Estimated Pose: " << last_position.x() << ", " << last_position.y() << ", " << last_position.theta() << std::endl;
+    //    std::cout << "Estimated Pose: " << last_position.x() << ", " << last_position.y() << ", " << last_position.theta() << std::endl;
     // Print the matrix using the specified format
-    std::cout << "Covariance Matrix:\n" << last_covariance.format(fmt) << std::endl;
+    std::cout << "Published Covariance Matrix:\n" << last_covariance.format(fmt) << std::endl;
     publisher_->publish(message);
   }
   
   // Updates Graph based on current readingsi, publishes current esitmated pose
   void update_graph() {    
-    initial_guess_.insert(graph_n_+1, Pose2(-2.0, -0.5, 0.0));
-    auto noise = noiseModel::Diagonal::Sigmas(Vector3(0.1,0.1,0.1));
+    initial_guess_.insert(graph_n_+1, Pose3(Pose2(-2.0, -0.5, 0.0)));
+    auto odom_noise = noiseModel::Diagonal::Variances((Vector(6) << 1e-5, 1e-5, 1.0, 1.0, 1.0, 1e-3).finished());
 
-    graph_.add(PriorFactor<Pose2>(graph_n_, amcl_pose_, amcl_noise_));
-   	graph_.emplace_shared<BetweenFactor<Pose2> >(graph_n_, graph_n_ + 1, odom_reading_ - last_odom_reading_, noise);
+    graph_.add(PriorFactor<Pose3>(graph_n_, amcl_pose_, amcl_noise_));
+   	graph_.emplace_shared<BetweenFactor<Pose3> >(graph_n_, graph_n_ + 1, odom_reading_ - last_odom_reading_, odom_noise);
    
 
     std::string message = "Added prior factor at" + std::to_string(graph_n_);
-    //RCLCPP_INFO(this->get_logger(), message.c_str()); 
+    RCLCPP_INFO(this->get_logger(), message.c_str()); 
     message = "Added between factor at" + std::to_string(graph_n_) + " " + std::to_string(graph_n_+1);
-    //RCLCPP_INFO(this->get_logger(), message.c_str()); 
+    RCLCPP_INFO(this->get_logger(), message.c_str()); 
     graph_n_++;
     // Publish estimated pose
     this->publish_esimated_pose();
@@ -236,7 +255,7 @@ private:
     PoseNoiseTuple result = getPoseFromAMCL(msg);
     amcl_pose_ = std::get<0>(result);
     amcl_noise_ = std::get<1>(result);
-    
+    /*
     if (this->debug_)
     {
       std::ostringstream stream;
@@ -245,6 +264,7 @@ private:
       RCLCPP_INFO(this->get_logger(), stream.str().c_str());
       std::cout << std::endl;
     }
+    */
     this->update_graph();
   }
 
@@ -254,10 +274,10 @@ private:
   
   size_t graph_n_; // Graph node count
   bool debug_;
-  Pose2 odom_reading_;
-  Pose2 last_odom_reading_;
+  Pose3 odom_reading_;
+  Pose3 last_odom_reading_;
   bool odom_initialized_; 
-  Pose2 amcl_pose_;
+  Pose3 amcl_pose_;
   noiseModel::Gaussian::shared_ptr amcl_noise_;
 
   Values initial_guess_;
