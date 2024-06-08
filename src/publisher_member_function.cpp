@@ -41,7 +41,7 @@ using std::placeholders::_1;
 using namespace std::chrono_literals;
 using namespace gtsam;
 
-using PoseNoiseTuple = std::tuple<gtsam::Pose2, std::shared_ptr<gtsam::noiseModel::Gaussian>>;
+using PoseNoiseTuple = std::tuple<gtsam::Pose2, gtsam::noiseModel::Gaussian::shared_ptr>; 
 
 gtsam::Pose2 operator-(const gtsam::Pose2& pose1, const gtsam::Pose2& pose2) {
     // Subtract the translation and rotation components separately
