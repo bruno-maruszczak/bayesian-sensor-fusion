@@ -163,19 +163,19 @@ private:
     //tf_q.setRPY(0.0, 0.0, last_position.theta());
 
     auto q = tf2::toMsg(tf_q);
-    /*
-    std::array<double, 36> covariance = { 
-      last_covariance(0,0), last_covariance(0,1), 0.0, 0.0, 0.0, last_covariance(0,2),
-      last_covariance(1,0), last_covariance(1,1), 0.0, 0.0, 0.0, last_covariance(1,2),
-      0.0                 , 0.0                 , 0.0, 0.0, 0.0, 0.0,
-      0.0                 , 0.0                 , 0.0, 0.0, 0.0, 0.0,
-      0.0                 , 0.0                 , 0.0, 0.0, 0.0, 0.0,
-      last_covariance(2,0), last_covariance(2,1), 0.0, 0.0, 0.0, last_covariance(2,2)
-    };
-    */
     
-    std::array<double, 36> covariance;
-    Eigen::Map<Eigen::Matrix<double, 6, 6, Eigen::RowMajor>>(covariance.data()) = last_covariance;
+    std::array<double, 36> covariance = { 
+      last_covariance(0,0), last_covariance(0,1), 0.0, 0.0, 0.0, last_covariance(0,5),
+      last_covariance(1,0), last_covariance(1,1), 0.0, 0.0, 0.0, last_covariance(1,5),
+      0.0                 , 0.0                 , 0.0, 0.0, 0.0, 0.0,
+      0.0                 , 0.0                 , 0.0, 0.0, 0.0, 0.0,
+      0.0                 , 0.0                 , 0.0, 0.0, 0.0, 0.0,
+      last_covariance(5,0), last_covariance(5,1), 0.0, 0.0, 0.0, last_covariance(5,5)
+    };
+    
+    
+    //std::array<double, 36> covariance;
+    //Eigen::Map<Eigen::Matrix<double, 6, 6, Eigen::RowMajor>>(covariance.data()) = last_covariance;
     // Prepare message
     auto message = geometry_msgs::msg::PoseWithCovarianceStamped();
     message.header = std_msgs::msg::Header();
