@@ -40,9 +40,8 @@ public:
 private:
     Pose3 getPoseFromOdom(const nav_msgs::msg::Odometry::SharedPtr msg);
     PoseNoiseTuple getPoseFromAMCL(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr amcl_msg);
-    void addPrior(Pose3 mean, noiseModel::Diagonal::shared_ptr noise);
-    void publish_esimated_pose();
-    void update_graph();
+    void setPrior(Pose3 mean, noiseModel::Diagonal::shared_ptr noise);
+    void publish_esimated_pose(bool debug = false);
     void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg);
     void amcl_callback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
     void imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg);
@@ -55,6 +54,7 @@ private:
     bool debug_;
     Pose3 odom_reading_;
     Pose3 last_odom_reading_;
+    size_t last_odom_n_;
     bool odom_initialized_; 
     Pose3 amcl_pose_;
     // imu

@@ -46,18 +46,16 @@ gtsam::Pose3 operator-(const gtsam::Pose3& pose1, const gtsam::Pose3& pose2) {
  * member function as a callback from the timer. */
 
 Minimal::Minimal()
-: Node("minimal_publisher"), graph_n_(0), debug_(true), last_odom_reading_(Pose3(Pose2(0.0, 0.0, 0.0))), odom_initialized_(false), skip_amcl(true)
+: Node("minimal_publisher"), graph_n_(0), debug_(false), last_odom_reading_(Pose3(Pose2(0.0, 0.0, 0.0))), last_odom_n_(0), odom_initialized_(false), skip_amcl(true)
 {
   // Add prior knowledge
-  addPrior(Pose3(Pose2(-2.0, -0.5, 0.0)), noiseModel::Isotropic::Sigma(6, 1e-2));
+  setPrior(Pose3(Pose2(-2.0, -0.5, 0.0)), noiseModel::Isotropic::Sigma(6, 1e-2));
 
   // Start publishing, subscribtion and time
   publisher_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("estimated_pose", 10);
   
-<<<<<<< HEAD
   odom_subscriber_ = this->create_subscription<nav_msgs::msg::Odometry>(
     "odom", 10, std::bind(&Minimal::odom_callback, this, _1));
->>>>>>> 584cbce8535c06fe7d2be686078e3ec6a7a86286
   
   amcl_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
     "amcl_pose", 10, std::bind(&Minimal::amcl_callback, this, _1));
@@ -88,18 +86,9 @@ PoseNoiseTuple Minimal::getPoseFromAMCL(const geometry_msgs::msg::PoseWithCovari
   // Convert 6x6 (x, y, z, rx, ry, rz) covariance matrix to 3x3 (x, y, rz)
   auto covariance_array = amcl_msg->pose.covariance;
   Eigen::Map<Eigen::Matrix<double, 6, 6, Eigen::RowMajor>> covariance_matrix(covariance_array.data());
-  Eigen::MatrixXd covariance(3, 3);
-  covariance << covariance_matrix(0, 0), covariance_matrix(0, 1), covariance_matrix(0, 5),
-               covariance_matrix(1, 0), covariance_matrix(1, 1), covariance_matrix(1, 5),
-               covariance_matrix(5, 0), covariance_matrix(5, 1), covariance_matrix(5, 5);
   covariance_matrix(2,2) = NaN; 
   covariance_matrix(3,3) = NaN; 
   covariance_matrix(4,4) = NaN; 
-  // Specify the desired format for printing
-  Eigen::IOFormat fmt(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", "\n", "[", "]");
-  std::cout << "AMCL Pose: " << x << ", " << y << ", " << theta << std::endl;
-  // Print the matrix using the specified format
-  std::cout << "AMCL Covariance Matrix:\n" << covariance_matrix.format(fmt) << std::endl << std::endl;
 
   // Create noise model from cov matrixj
   noiseModel::Gaussian::shared_ptr noise_model = noiseModel::Gaussian::Covariance(covariance_matrix);
@@ -108,41 +97,33 @@ PoseNoiseTuple Minimal::getPoseFromAMCL(const geometry_msgs::msg::PoseWithCovari
 }
   
 
-void Minimal::addPrior(Pose3 mean, noiseModel::Diagonal::shared_ptr noise)
+void Minimal::setPrior(Pose3 initial_pose, noiseModel::Diagonal::shared_ptr initial_uncertainty)
 { 
-  graph_.add(PriorFactor<Pose3>(1,  mean, noise));
-  initial_guess_.insert(1, Pose3(Pose2(-2.0, -0.5, 0.0)));
-  RCLCPP_INFO(this->get_logger(), "Added PriorFactor: 1");
-  graph_n_++;
-
-  if (debug_)
-    RCLCPP_INFO(this->get_logger(), "Graph: Set prior to intial position");
+  graph_.add(PriorFactor<Pose3>(1,  initial_pose, initial_uncertainty));
+  initial_guess_.insert(1, initial_pose);
+  graph_n_ = 1;
+  RCLCPP_INFO(this->get_logger(), "Graph: Set prior to intial position");
 }
 
 // Given current graph, calculates and publishes estimated Pose
 // PoseWithCovarianceStamped
-void Minimal::publish_esimated_pose()
+void Minimal::publish_esimated_pose(bool debug)
 {
   // Optimise graph
-  LevenbergMarquardtOptimizer optimizer(graph_, initial_guess_);
-  
-  // Estimate positions
+  LevenbergMarquardtOptimizer optimizer(graph_, Values(initial_guess_));
   Values results = optimizer.optimize();
   Marginals marginals(graph_, results);
   
-  std::string log_message = "Reading factor at: " + std::to_string(graph_n_);
-  RCLCPP_INFO(this->get_logger(), log_message.c_str()); 
+
+  
   auto last_pose = results.at<Pose3>(graph_n_);
-  auto last_covariance = marginals.marginalCovariance(graph_n_);
   auto last_position = last_pose.translation();
   auto last_r = last_pose.rotation().toQuaternion();
-
-  // Convert Pose to msg format
+  // Convert Rotation to msg format
   auto tf_q = tf2::Quaternion(last_r.x(), last_r.y(), last_r.z(), last_r.w());
-  //tf_q.setRPY(0.0, 0.0, last_position.theta());
-
   auto q = tf2::toMsg(tf_q);
-
+  // Convert covariance to 2D for visualisation
+  auto last_covariance = marginals.marginalCovariance(graph_n_);
   std::array<double, 36> covariance = { 
     last_covariance(0,0), last_covariance(0,1), 0.0, 0.0, 0.0, last_covariance(0,2),
     last_covariance(1,0), last_covariance(1,1), 0.0, 0.0, 0.0, last_covariance(1,2),
@@ -151,73 +132,63 @@ void Minimal::publish_esimated_pose()
     0.0                 , 0.0                 , 0.0, 0.0, 0.0, 0.0,
     last_covariance(2,0), last_covariance(2,1), 0.0, 0.0, 0.0, last_covariance(2,2)
   };
-
-  
-  //std::array<double, 36> covariance;
-  //Eigen::Map<Eigen::Matrix<double, 6, 6, Eigen::RowMajor>>(covariance.data()) = last_covariance;
-
+ 
   // Prepare message
-  auto message = geometry_msgs::msg::PoseWithCovarianceStamped(); pr
+  auto message = geometry_msgs::msg::PoseWithCovarianceStamped();
   message.header = std_msgs::msg::Header();
   message.header.frame_id = "odom";
   message.header.stamp = this->now();
-
   message.pose.pose.position.x = last_position.x();
   message.pose.pose.position.y = last_position.y();
-  message.pose.pose.position.z = 0.0;
-  
+  message.pose.pose.position.z = 0.0;  
   message.pose.pose.orientation = q;
-
   message.pose.covariance = covariance;
   
-  // Print output    
-
-  Eigen::IOFormat fmt(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", "\n", "[", "]");
-  std::cout << "Estimated Pose: " << last_position.x() << ", " << last_position.y() << ", " << last_position.z() << std::endl;
-  // Print the matrix using the specified format
-  std::cout << "Published Covariance Matrix:\n" << last_covariance.format(fmt) << std::endl;
   publisher_->publish(message);
+
+
+  if(debug) {
+    std::string log_message = "Publishing estimate at graph length of " + std::to_string(graph_n_);
+    RCLCPP_INFO(this->get_logger(), log_message.c_str()); 
+    // Print output    
+    Eigen::IOFormat fmt(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", "\n", "[", "]");
+    std::cout << "Estimated position: " << last_position.x() << ", " << last_position.y() << ", " << last_position.z() << std::endl;
+    // Print the matrix using the specified format
+    std::cout << "Published Covariance Matrix:\n" << last_covariance.format(fmt) << std::endl;
+  }
 }
 
-// Updates Graph based on current readingsi, publishes current esitmated pose
-void Minimal::update_graph() {    
-  initial_guess_.insert(graph_n_+1, Pose3(Pose2(-2.0, -0.5, 0.0)));
-  auto odom_noise = noiseModel::Diagonal::Variances((Vector(6) << 1e-5, 1e-5, NaN, NaN, NaN, 1e-3).finished());
-
-  graph_.add(PriorFactor<Pose3>(graph_n_, amcl_pose_, amcl_noise_));
-  graph_.emplace_shared<BetweenFactor<Pose3> >(graph_n_, graph_n_ + 1, odom_reading_ - last_odom_reading_, odom_noise);
- 
-  /*
-  std::string message = "Added prior factor at" + std::to_string(graph_n_);
-  RCLCPP_INFO(this->get_logger(), message.c_str()); 
-  message = "Added between factor at" + std::to_string(graph_n_) + " " + std::to_string(graph_n_+1);
-  RCLCPP_INFO(this->get_logger(), message.c_str()); 
-  */
-
-  graph_n_++;
-  // Publish estimated pose
-  this->publish_esimated_pose();
-  
-  // Update last odometry, for calculating change of position 
-  last_odom_reading_ = odom_reading_;
-}
 
 // Odom Reading
 void Minimal::odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
 {
-  /*
+  std::cout << "o ";
+  
+  if(!odom_initialized_){
+    std::string debug_msg = "Initialized odom at " + std::to_string(graph_n_ + 1);
+    RCLCPP_INFO(this->get_logger(), debug_msg.c_str());
+    
+    last_odom_reading_ = getPoseFromOdom(msg);
+    last_odom_n_ = graph_n_;
+    odom_initialized_ = true;
+    return;
+  }
+  
   if (this->debug_)
   {
-    std::string debug_msg = "Received odometry. " + std::to_string(graph_n_ + 1);
+    std::string debug_msg = "Received odometry reading at " + std::to_string(graph_n_ + 1);
     RCLCPP_INFO(this->get_logger(), debug_msg.c_str());
   }
-  */
-
-  if(!odom_initialized_){
-    last_odom_reading_ = getPoseFromOdom(msg);
-    odom_initialized_ = true;
-  }
   odom_reading_ = getPoseFromOdom(msg);   
+  auto odom_noise = noiseModel::Diagonal::Variances((Vector(6) << 1e-5, 1e-5, 1e-9, 1e-9, 1e-9, 1e-3).finished());
+  initial_guess_.insert(graph_n_+1, Pose3(odom_reading_));
+  graph_.emplace_shared<BetweenFactor<Pose3> >(last_odom_n_, graph_n_ + 1, odom_reading_ - last_odom_reading_, odom_noise);
+
+  last_odom_reading_ = odom_reading_;
+  last_odom_n_ = graph_n_ + 1;
+  
+  graph_n_++;
+  //this->publish_esimated_pose();
 }
 
 // AMCL reading
@@ -225,13 +196,12 @@ void Minimal::odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
 
 void Minimal::amcl_callback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg)
 {
-  /*
+  std::cout << " AMCL" << std::endl;
   if (this->debug_)
   {
-    std::string debug_msg = "Received amcl pose.";
+    std::string debug_msg = "Received amcl pose at " + std::to_string(graph_n_ + 1);
     RCLCPP_INFO(this->get_logger(), debug_msg.c_str());
   }
-  */
 
   if (this->skip_amcl == true)
   {
@@ -243,17 +213,11 @@ void Minimal::amcl_callback(const geometry_msgs::msg::PoseWithCovarianceStamped:
   amcl_pose_ = std::get<0>(result);
   amcl_noise_ = std::get<1>(result);
 
-  /*
-  if (this->debug_)
-  {
-    std::ostringstream stream;
-    stream << "AMCL covariance matrix:\n" << amcl_noise_->R().format(Eigen::IOFormat(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", "\n", "[", "]"));
-    RCLCPP_INFO(this->get_logger(), "Pose2: (x: %f, y: %f, theta: %f)", amcl_pose_.x(), amcl_pose_.y(), amcl_pose_.theta());
-    RCLCPP_INFO(this->get_logger(), stream.str().c_str());
-    std::cout << std::endl;
-  }
-  */
-  this->update_graph();
+  initial_guess_.insert(graph_n_+1, Pose3(amcl_pose_));
+  graph_.add(PriorFactor<Pose3>(graph_n_ + 1, amcl_pose_, amcl_noise_));
+
+  graph_n_++;
+  this->publish_esimated_pose(true);
 }
  
 // Imu subscriber callback, updates imu velocities, acceleration and its covariance matrices
