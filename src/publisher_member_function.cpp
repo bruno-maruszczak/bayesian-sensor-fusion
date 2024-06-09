@@ -34,8 +34,8 @@ gtsam::Pose2 operator-(const gtsam::Pose2& pose1, const gtsam::Pose2& pose2) {
 
 gtsam::Pose3 operator-(const gtsam::Pose3& pose1, const gtsam::Pose3& pose2) {
     // Subtract the translation and rotation components separately
-    double dx = pose1.translation().x() - pose2.translation().x();
-    double dy = pose1.translation().y() - pose2.translation().y();
+    double dx = pose2.translation().x() - pose1.translation().x();
+    double dy = pose2.translation().y() - pose1.translation().y();
     //double dz = pose1.translation().z() - pose2.translation().z();
     auto dq = Rot3(traits<Quaternion>::Between(pose1.rotation().toQuaternion(), pose2.rotation().toQuaternion()));
     // Return the difference as a new Pose2 object
@@ -46,7 +46,7 @@ gtsam::Pose3 operator-(const gtsam::Pose3& pose1, const gtsam::Pose3& pose2) {
  * member function as a callback from the timer. */
 
 Minimal::Minimal()
-: Node("minimal_publisher"), graph_n_(0), debug_(false), last_odom_reading_(Pose3(Pose2(0.0, 0.0, 0.0))), last_odom_n_(0), odom_initialized_(false), skip_amcl(true)
+: Node("minimal_publisher"), graph_n_(0), debug_(false), last_odom_reading_(Pose3(Pose2(0.0, 0.0, 0.0))), last_odom_n_(0), odom_counter_(0), odom_initialized_(false), skip_amcl(true)
 {
   // Add prior knowledge
   setPrior(Pose3(Pose2(-2.0, -0.5, 0.0)), noiseModel::Isotropic::Sigma(6, 1e-2));
@@ -125,12 +125,12 @@ void Minimal::publish_esimated_pose(bool debug)
   // Convert covariance to 2D for visualisation
   auto last_covariance = marginals.marginalCovariance(graph_n_);
   std::array<double, 36> covariance = { 
-    last_covariance(0,0), last_covariance(0,1), 0.0, 0.0, 0.0, last_covariance(0,2),
-    last_covariance(1,0), last_covariance(1,1), 0.0, 0.0, 0.0, last_covariance(1,2),
+    last_covariance(0,0), last_covariance(0,1), 0.0, 0.0, 0.0, last_covariance(0,5),
+    last_covariance(1,0), last_covariance(1,1), 0.0, 0.0, 0.0, last_covariance(1,5),
     0.0                 , 0.0                 , 0.0, 0.0, 0.0, 0.0,
     0.0                 , 0.0                 , 0.0, 0.0, 0.0, 0.0,
     0.0                 , 0.0                 , 0.0, 0.0, 0.0, 0.0,
-    last_covariance(2,0), last_covariance(2,1), 0.0, 0.0, 0.0, last_covariance(2,2)
+    last_covariance(5,0), last_covariance(5,1), 0.0, 0.0, 0.0, last_covariance(5,5)
   };
  
   // Prepare message
@@ -179,16 +179,22 @@ void Minimal::odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
     std::string debug_msg = "Received odometry reading at " + std::to_string(graph_n_ + 1);
     RCLCPP_INFO(this->get_logger(), debug_msg.c_str());
   }
+
+  odom_counter_++;
+  if(odom_counter_ % 10 != 0) {
+    return;
+  }
+
   odom_reading_ = getPoseFromOdom(msg);   
-  auto odom_noise = noiseModel::Diagonal::Variances((Vector(6) << 1e-5, 1e-5, 1e-9, 1e-9, 1e-9, 1e-3).finished());
+  auto odom_noise = noiseModel::Diagonal::Variances((Vector(6) << 1e-4, 1e-4, 1e-9, 1e-9, 1e-9, 1e-4).finished());
   initial_guess_.insert(graph_n_+1, Pose3(odom_reading_));
-  graph_.emplace_shared<BetweenFactor<Pose3> >(last_odom_n_, graph_n_ + 1, odom_reading_ - last_odom_reading_, odom_noise);
+  graph_.emplace_shared<BetweenFactor<Pose3> >(last_odom_n_, graph_n_ + 1, last_odom_reading_.transformPoseTo(odom_reading_), odom_noise);
 
   last_odom_reading_ = odom_reading_;
   last_odom_n_ = graph_n_ + 1;
   
   graph_n_++;
-  //this->publish_esimated_pose();
+  this->publish_esimated_pose();
 }
 
 // AMCL reading

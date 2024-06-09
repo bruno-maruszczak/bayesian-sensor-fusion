@@ -55,6 +55,7 @@ private:
     Pose3 odom_reading_;
     Pose3 last_odom_reading_;
     size_t last_odom_n_;
+    size_t odom_counter_;
     bool odom_initialized_; 
     Pose3 amcl_pose_;
     // imu
