@@ -46,7 +46,7 @@ gtsam::Pose3 operator-(const gtsam::Pose3& pose1, const gtsam::Pose3& pose2) {
  * member function as a callback from the timer. */
 
 Minimal::Minimal()
-: Node("minimal_publisher"), graph_n_(0), debug_(false), last_odom_reading_(Pose3(Pose2(0.0, 0.0, 0.0))), last_odom_n_(0), odom_initialized_(false), skip_amcl(true)
+: Node("minimal_publisher"), graph_n_(0), debug_(false), last_odom_reading_(Pose3(Pose2(0.0, 0.0, 0.0))), last_odom_n_(0), odom_initialized_(false), skip_ekf(true), skip_amcl(true)
 {
   // Add prior knowledge
   setPrior(Pose3(Pose2(-2.0, -0.5, 0.0)), noiseModel::Isotropic::Sigma(6, 1e-2));
@@ -57,11 +57,11 @@ Minimal::Minimal()
   odom_subscriber_ = this->create_subscription<nav_msgs::msg::Odometry>(
     "odom", 10, std::bind(&Minimal::odom_callback, this, _1));
   
+  ekf_subscriber_ = this->create_subscription<nav_msgs::msg::Odometry>(
+    "odometry/filtered", 10, std::bind(&Minimal::ekf_callback, this, _1));
+
   amcl_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
     "amcl_pose", 10, std::bind(&Minimal::amcl_callback, this, _1));
-
-  imu_subscriber_ = this->create_subscription<sensor_msgs::msg::Imu>(
-    "imu", 10, std::bind(&Minimal::imu_callback, this, _1));
 }
 
 // Given odometry message returns robot position as Pos2(x, y, theta)
@@ -72,6 +72,29 @@ Pose3 Minimal::getPoseFromOdom(const nav_msgs::msg::Odometry::SharedPtr msg)
   auto theta = quaternionToYaw(msg->pose.pose.orientation);
 
   return Pose3(Pose2(x, y, theta));
+}
+
+PoseNoiseTuple Minimal::getPoseFromEKF(const nav_msgs::msg::Odometry::SharedPtr ekf_msg)
+{
+
+  // Get pose from msg
+  auto x = ekf_msg->pose.pose.position.x;
+  auto y = ekf_msg->pose.pose.position.y;
+  auto theta = quaternionToYaw(ekf_msg->pose.pose.orientation);
+
+  Pose2 pose(x, y, theta);
+  
+  // Convert 6x6 (x, y, z, rx, ry, rz) covariance matrix to 3x3 (x, y, rz)
+  auto covariance_array = ekf_msg->pose.covariance;
+  Eigen::Map<Eigen::Matrix<double, 6, 6, Eigen::RowMajor>> covariance_matrix(covariance_array.data());
+  covariance_matrix(2,2) = NaN; 
+  covariance_matrix(3,3) = NaN; 
+  covariance_matrix(4,4) = NaN; 
+
+  // Create noise model from cov matrixj
+  noiseModel::Gaussian::shared_ptr noise_model = noiseModel::Gaussian::Covariance(covariance_matrix);
+  return std::make_tuple(Pose3(pose), noise_model);
+
 }
 
 PoseNoiseTuple Minimal::getPoseFromAMCL(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr amcl_msg)
@@ -93,9 +116,7 @@ PoseNoiseTuple Minimal::getPoseFromAMCL(const geometry_msgs::msg::PoseWithCovari
   // Create noise model from cov matrixj
   noiseModel::Gaussian::shared_ptr noise_model = noiseModel::Gaussian::Covariance(covariance_matrix);
   return std::make_tuple(Pose3(pose), noise_model);
-
 }
-  
 
 void Minimal::setPrior(Pose3 initial_pose, noiseModel::Diagonal::shared_ptr initial_uncertainty)
 { 
@@ -191,9 +212,36 @@ void Minimal::odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
   //this->publish_esimated_pose();
 }
 
-// AMCL reading
+// ekf reading
   
 
+void Minimal::ekf_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
+{
+  std::cout << "EKF" << std::endl;
+  if (this->debug_)
+  {
+    std::string debug_msg = "Received ekf pose at " + std::to_string(graph_n_ + 1);
+    RCLCPP_INFO(this->get_logger(), debug_msg.c_str());
+  }
+  
+  // Skips first ekf reading
+  if (this->skip_ekf == true)
+  {
+    skip_ekf = false;
+    return;
+  }    
+
+  PoseNoiseTuple result = getPoseFromEKF(msg);
+  ekf_pose_ = std::get<0>(result);
+  ekf_noise_ = std::get<1>(result);
+
+  initial_guess_.insert(graph_n_+1, Pose3(ekf_pose_));
+  graph_.add(PriorFactor<Pose3>(graph_n_ + 1, ekf_pose_, ekf_noise_));
+
+  graph_n_++;
+  this->publish_esimated_pose(true);
+}
+ 
 void Minimal::amcl_callback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg)
 {
   std::cout << " AMCL" << std::endl;
@@ -213,34 +261,13 @@ void Minimal::amcl_callback(const geometry_msgs::msg::PoseWithCovarianceStamped:
   amcl_pose_ = std::get<0>(result);
   amcl_noise_ = std::get<1>(result);
 
-  initial_guess_.insert(graph_n_+1, Pose3(amcl_pose_));
-  graph_.add(PriorFactor<Pose3>(graph_n_ + 1, amcl_pose_, amcl_noise_));
+  //initial_guess_.insert(graph_n_+1, Pose3(amcl_pose_));
+  //graph_.add(PriorFactor<Pose3>(graph_n_ + 1, amcl_pose_, amcl_noise_));
 
-  graph_n_++;
-  this->publish_esimated_pose(true);
+  //graph_n_++;
+  //this->publish_esimated_pose(true);
 }
- 
-// Imu subscriber callback, updates imu velocities, acceleration and its covariance matrices
-void Minimal::imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg)
-{
-  /*
-  if (this->debug_)
-  {
-    std::string debug_msg = "Received Imu data. ";
-    RCLCPP_INFO(this->get_logger(), debug_msg.c_str());
-  }
-  */
 
-  // Get angular velocity
-  imu_vel_ << msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z;
-  Eigen::Map<Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> imu_vel_cov_(msg->angular_velocity_covariance.data());
-  
-  // Get acceleration
-  imu_accel_ << msg->linear_acceleration.y, msg->linear_acceleration.y, msg->linear_acceleration.z;
-  Eigen::Map<Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> imu_accel_cov_(msg->linear_acceleration_covariance.data());
-
-  // We don't use orientation
-}
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);

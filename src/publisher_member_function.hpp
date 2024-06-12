@@ -39,15 +39,16 @@ public:
 
 private:
     Pose3 getPoseFromOdom(const nav_msgs::msg::Odometry::SharedPtr msg);
-    PoseNoiseTuple getPoseFromAMCL(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr amcl_msg);
+    PoseNoiseTuple getPoseFromEKF(const nav_msgs::msg::Odometry::SharedPtr ekf_msg);
     void setPrior(Pose3 mean, noiseModel::Diagonal::shared_ptr noise);
     void publish_esimated_pose(bool debug = false);
     void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg);
     void amcl_callback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
-    void imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg);
+    void ekf_callback(const nav_msgs::msg::Odometry::SharedPtr msg);
+
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subscriber_;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr ekf_subscriber_;
     rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr amcl_subscriber_;
-    rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_subscriber_;
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr publisher_;
     
     size_t graph_n_;
@@ -56,15 +57,13 @@ private:
     Pose3 last_odom_reading_;
     size_t last_odom_n_;
     bool odom_initialized_; 
+    Pose3 ekf_pose_;
     Pose3 amcl_pose_;
-    // imu
-    Vector3 imu_vel_;
-    Vector3 imu_accel_;
-    Eigen::Matrix<double, 3, 3> imu_vel_cov_;
-    Eigen::Matrix<double, 3, 3> imu_accel_cov_;
 
+    noiseModel::Gaussian::shared_ptr ekf_noise_;
     noiseModel::Gaussian::shared_ptr amcl_noise_;
     Values initial_guess_;
     NonlinearFactorGraph graph_;
+    bool skip_ekf;
     bool skip_amcl;
 };

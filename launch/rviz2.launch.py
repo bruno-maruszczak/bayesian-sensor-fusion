@@ -30,14 +30,19 @@ from lifecycle_msgs.msg import Transition
 
 def generate_launch_description():
     rviz_config_dir = os.path.join(
-        get_package_share_directory('bayesian-sensor-fusion'),
-        'launch',
-        'config.rviz')
+            get_package_share_directory('bayesian-sensor-fusion'),
+            'launch',
+            'config.rviz')
+
+    ekf_yaml_path = os.path.join(
+            get_package_share_directory('bayesian-sensor-fusion'),
+            'params',
+            'ekf_params.yaml')
 
     amcl_yaml_path = os.path.join(
-        get_package_share_directory('bayesian-sensor-fusion'),
-        'params',
-        'amcl_params.yaml')
+            get_package_share_directory('bayesian-sensor-fusion'),
+            'params',
+            'amcl_params.yaml')
 
     rviz2_node = Node(
             package='rviz2',
@@ -45,7 +50,14 @@ def generate_launch_description():
             name='rviz2',
             arguments=['-d', rviz_config_dir],
             output='screen')
-   
+
+    ekf_node = Node(
+            package='robot_localization',
+            executable='ekf_node',
+            name='ekf_filter_node',
+            output='screen',
+            parameters=[ekf_yaml_path])
+
     nav2_amcl_node = Node(
             package='nav2_amcl',
             executable='amcl',
@@ -59,19 +71,23 @@ def generate_launch_description():
             executable='talker',
             name='talker',
             output='screen')
-    
+
     nav2_lifecycle =Node(
-                package='nav2_lifecycle_manager',
-                executable='lifecycle_manager',
-                name='lifecycle_manager_amcl',
-                output='screen',
-                parameters=[{'node_names' : ["amcl"]},
-                            {'autostart': True},
-                            {'use_sim_time': True}])
+            package='nav2_lifecycle_manager',
+            executable='lifecycle_manager',
+            name='lifecycle_manager_amcl',
+            output='screen',
+            parameters=[{'node_names' : ["amcl"]},
+                        {'autostart': True},
+                        {'use_sim_time': True}])
+
+
     ld = LaunchDescription()
+
+    ld.add_action(ekf_node)
     ld.add_action(nav2_amcl_node)
     ld.add_action(rviz2_node)
-    ld.add_action(nav2_lifecycle) 
+    ld.add_action(nav2_lifecycle)
     ld.add_action(gtsam_node) 
-    
+
     return ld
