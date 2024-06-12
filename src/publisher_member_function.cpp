@@ -267,11 +267,11 @@ void Minimal::amcl_callback(const geometry_msgs::msg::PoseWithCovarianceStamped:
   amcl_pose_ = std::get<0>(result);
   amcl_noise_ = std::get<1>(result);
 
-  //initial_guess_.insert(graph_n_+1, Pose3(amcl_pose_));
-  //graph_.add(PriorFactor<Pose3>(graph_n_ + 1, amcl_pose_, amcl_noise_));
+  initial_guess_.insert(graph_n_+1, Pose3(amcl_pose_));
+  graph_.add(PriorFactor<Pose3>(graph_n_ + 1, amcl_pose_, amcl_noise_));
 
-  //graph_n_++;
-  //this->publish_esimated_pose(true);
+  graph_n_++;
+  this->publish_esimated_pose(true);
 }
 
 int main(int argc, char * argv[])
