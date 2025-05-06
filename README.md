@@ -1,14 +1,16 @@
 # Overview
-The goal is to use GTSAM library (sensor fusion) to localize the robot on a known map.
+The goal is to use Bayesian optimization on factor graphs (implemented in [GTSAM](https://gtsam.org/) C++ library) to localize the robot on a known map.
+
 We use three different Turtlebot3 sensors:
-- Odometry
-- LiDAR
-- IMU
-And 2 localization libraries: AMCL, EKF.
+- Odometry (binary factor)
+- LiDAR (unary factor after reconstructing pose estimate)
+- IMU (binary factor - using preintegration strategy to reduce sample count)
+
+And 2 localization libraries: AMCL and EKF.
 
 # Compilling and running
 ### If building GTSAM from source
-Fix linking error
+Fix linking error (might not be needed depending on GTSAM and Eigen versions)
 ```
 cd /usr/local/include
 sudo ln -sf eigen3/Eigen Eigen
