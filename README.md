@@ -1,14 +1,19 @@
-# Overview
+## Overview
+
 The goal is to use Bayesian optimization on factor graphs (implemented in [GTSAM](https://gtsam.org/) C++ library) to localize the robot on a known map.
 
-We use three different Turtlebot3 sensors:
+Factor graphs are a **declarative model for performing Bayesian inference** particularly fitted for representing sensor fusion solutions. In our case **unary factors** represent position measurements and **binary factors** represent displacement (change of position) measurements. These measurements along with their covariance (inverse precision) matrix form constraints on possible positions and the result of **inference is the most likely sequence of positions**.
+
+The measurements extend the factor graph by inserting appropriate factors. We use three different Turtlebot3 sensors:
 - Odometry (binary factor)
 - LiDAR (unary factor after reconstructing pose estimate)
 - IMU (binary factor - using preintegration strategy to reduce sample count)
 
 And 2 localization libraries: AMCL and EKF.
 
-# Compilling and running
+
+## Compilling and running
+
 ### If building GTSAM from source
 Fix linking error (might not be needed depending on GTSAM and Eigen versions)
 ```
